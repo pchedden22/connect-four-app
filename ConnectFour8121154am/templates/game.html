@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect 4</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            flex-direction: column;
+            background-color: black;
+            color: white;
+        }
+        .board {
+            display: flex;
+            flex-direction: column;
+            background-color: #007bff;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        .row {
+            display: flex;
+        }
+        .cell {
+            width: 60px;
+            height: 60px;
+            border: 1px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 1px;
+            border-radius: 50%;
+            background-color: black;
+        }
+        .player1 {
+            background-color: red;
+            border-radius: 50%;
+            width: 69px;
+            height: 60px;
+        }
+        .player2 {
+            background-color: yellow;
+            border-radius: 50%;
+            width: 69px;
+            height: 60px;
+        }
+        .winner {
+            font-size: 24px;
+            color: rgb(0, 255, 0);
+        }
+        .tie {
+            font-size: 24px;
+            color: orange;
+        }
+        .restart-button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .restart-button:hover {
+            background-color: #0056b3;
+        }
+         .highlighted {
+            background-color: lightgreen; /* Highlighting color */
+        }
+    </style>
+</head>
+<body>
+    <div id="status"></div>
+    <div id="board" class="board"></div>
+    <button id="restart-button" class="restart-button" style="display: none;">Restart Game</button>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const rows = JSON.parse('{{ rows|tojson }}');
+            const columns = JSON.parse('{{ columns|tojson }}');
+            const winLength = JSON.parse('{{ win_length|tojson }}');
+            const gameId = "{{ game_id }}";
+            const difficulty = "{{ difficulty }}"; // Get the difficulty level from the server
+            const boardElement = document.getElementById('board');
+            const statusElement = document.getElementById('status');
+            const restartButton = document.getElementById('restart-button');
+
+            let board = Array.from({ length: rows }, () => Array(columns).fill(''));
+            let gameOver = false;
+            let currentPlayer = 'player1';
+
+            function renderBoard() {
+                boardElement.innerHTML = '';
+                for (let row = 0; row < rows; row++) {
+                    const rowElement = document.createElement('div');
+                    rowElement.className = 'row';
+                    for (let col = 0; col < columns; col++) {
+                        const cellElement = document.createElement('div');
+                        cellElement.className = 'cell';
+                        if (board[row][col] === 'player1') {
+                            const piece = document.createElement('div');
+                            piece.className = 'player1';
+                            cellElement.appendChild(piece);
+                        } else if (board[row][col] === 'player2') {
+                            const piece = document.createElement('div');
+                            piece.className = 'player2';
+                            cellElement.appendChild(piece);
+                        }
+                        cellElement.addEventListener('click', () => handleCellClick(row, col));
+                        rowElement.appendChild(cellElement);
+                    }
+                    boardElement.appendChild(rowElement);
+                }
+            }
+
+            function handleCellClick(row, col) {
+                if (gameOver || board[0][col] || currentPlayer === 'player2') return; // Game is over, column is full, or it's not player1's turn
+
+                // Find the lowest empty cell in the column
+                let emptyRow;
+                for (let r = rows - 1; r >= 0; r--) {
+                    if (!board[r][col]) {
+                        emptyRow = r;
+                        break;
+                    }
+                }
+
+                if (emptyRow === undefined) return;
+
+                // Optimistically update the UI
+                board[emptyRow][col] = currentPlayer;
+                renderBoard();
+
+                fetch('/move', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ game_id: gameId, column: col, difficulty: difficulty })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        board = data.board;
+                        renderBoard();
+                        if (data.winner) {
+                            statusElement.textContent = `${data.winner} wins!`;
+                            gameOver = true;
+                            restartButton.style.display = 'block';
+                        } else if (data.tie) {
+                            statusElement.textContent = `It's a tie!`;
+                            gameOver = true;
+                            restartButton.style.display = 'block';
+                        } else {
+                            // Switch to the next player
+                            currentPlayer = 'player2';
+                            if (data.ai_move !== null) {
+                                setTimeout(() => handleAIMove(data.ai_move), 500); // Adding a delay to simulate thinking time
+                            }
+                        }
+                    } else {
+                        // Revert the UI update if there was an error
+                        board[emptyRow][col] = '';
+                        renderBoard();
+                    }
+                })
+                .catch(() => {
+                    // Revert the UI update if there was an error
+                    board[emptyRow][col] = '';
+                    renderBoard();
+                });
+            }
+
+            function handleAIMove(aiColumn) {
+                if (gameOver) return;
+
+                // Find the lowest empty cell in the chosen column
+                let emptyRow;
+                for (let r = rows - 1; r >= 0; r--) {
+                    if (!board[r][aiColumn]) {
+                        emptyRow = r;
+                        break;
+                    }
+                }
+
+                if (emptyRow === undefined) return;
+
+                // Optimistically update the UI
+                board[emptyRow][aiColumn] = currentPlayer;
+                renderBoard();
+
+                fetch('/move', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ game_id: gameId, column: aiColumn })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        board = data.board;
+                        renderBoard();
+                        if (data.winner) {
+                            statusElement.textContent = `${data.winner} wins!`;
+                            gameOver = true;
+                            restartButton.style.display = 'block';
+                        } else if (data.tie) {
+                            statusElement.textContent = `It's a tie!`;
+                            gameOver = true;
+                            restartButton.style.display = 'block';
+                        } else {
+                            // Switch to the next player
+                            currentPlayer = 'player1';
+                        }
+                    } else {
+                        // Revert the UI update if there was an error
+                        board[emptyRow][aiColumn] = '';
+                        renderBoard();
+                    }
+                })
+                .catch(() => {
+                    // Revert the UI update if there was an error
+                    board[emptyRow][aiColumn] = '';
+                    renderBoard();
+                });
+            }
+
+            function restartGame() {
+                location.reload(); // Refresh the page to restart the game
+            }
+
+            restartButton.addEventListener('click', restartGame);
+
+            renderBoard();
+        });
+        
+    </script>
+</body>
+</html>
