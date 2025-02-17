@@ -211,7 +211,7 @@ class ConnectFour:
         print('ai_move_medium')
         block_probability = 0.70  # 70% chance to block the opponent
         middle_probability = 0.7  # 70% chance to move in the middle
-        blocking_move = self.find_winning_move()
+        blocking_move = self.find_winning_move('player1')
         
         if blocking_move is not None and random.random() < block_probability:
             print('Block!')
